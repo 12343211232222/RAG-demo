@@ -14,8 +14,10 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import sys
+import urllib.request
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
@@ -93,7 +95,57 @@ def _fixed_chunks(doc_key, meta, body, size=500, overlap=50):
     return chunks
 
 
-CHUNKERS = {"paragraph": _para_chunks, "heading": _heading_chunks, "fixed": _fixed_chunks}
+# ---- 真实嵌入模型（OpenAI 兼容 /embeddings 接口，环境变量配置，不内置密钥）----
+#   KB_EMBED_BASE_URL  如 https://api.openai.com/v1 或本地 Ollama 的 http://127.0.0.1:11434/v1
+#   KB_EMBED_API_KEY   密钥（本地服务可任意）
+#   KB_EMBED_MODEL     如 text-embedding-3-small / bge-m3
+#   KB_SEMANTIC_THRESHOLD  相邻段落余弦相似度切分阈值，默认 0.5
+
+def embed_texts(texts):
+    """调用真实嵌入模型；未配置 KB_EMBED_BASE_URL 时返回 None。"""
+    base = os.environ.get("KB_EMBED_BASE_URL")
+    if not base:
+        return None
+    key = os.environ.get("KB_EMBED_API_KEY", "")
+    model = os.environ.get("KB_EMBED_MODEL", "text-embedding-3-small")
+    req = urllib.request.Request(
+        base.rstrip("/") + "/embeddings",
+        data=json.dumps({"model": model, "input": texts}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        data = json.loads(r.read())
+    return [d["embedding"] for d in sorted(data["data"], key=lambda d: d["index"])]
+
+
+def _cos(a, b):
+    na = math.sqrt(sum(x * x for x in a)) or 1e-9
+    nb = math.sqrt(sum(x * x for x in b)) or 1e-9
+    return sum(x * y for x, y in zip(a, b)) / (na * nb)
+
+
+def _semantic_chunks(doc_key, meta, body):
+    """解析算法四：语义分块——真实嵌入模型计算相邻段落余弦相似度，低于阈值处切开。"""
+    paras = [re.sub(r"\s+", " ", p.strip()) for p in re.split(r"\n\s*\n", body)
+             if p.strip() and not p.strip().startswith("#")]
+    if not paras:
+        return []
+    vecs = embed_texts(paras)
+    if vecs is None:
+        raise ValueError("语义分块需要真实嵌入模型：请设置环境变量 "
+                         "KB_EMBED_BASE_URL / KB_EMBED_API_KEY / KB_EMBED_MODEL")
+    threshold = float(os.environ.get("KB_SEMANTIC_THRESHOLD", "0.5"))
+    groups, cur = [], [paras[0]]
+    for i in range(1, len(paras)):
+        if _cos(vecs[i - 1], vecs[i]) < threshold:
+            groups.append(cur)
+            cur = []
+        cur.append(paras[i])
+    groups.append(cur)
+    return [("", i + 1, " ".join(g)) for i, g in enumerate(groups)]
+
+
+CHUNKERS = {"paragraph": _para_chunks, "heading": _heading_chunks,
+            "fixed": _fixed_chunks, "semantic": _semantic_chunks}
 
 
 def chunk_markdown(doc_key, meta, body, method="paragraph"):
@@ -403,6 +455,7 @@ button:hover{background:#1d4ed8}
 <option value="paragraph">解析算法：按段落分块</option>
 <option value="heading">解析算法：按章节分块</option>
 <option value="fixed">解析算法：定长滑窗(500字)</option>
+<option value="semantic">解析算法：语义分块(需嵌入模型)</option>
 </select>
 <label class="filebtn">选择文件<input type="file" id="file" accept=".md,.txt,.markdown" style="display:none"></label>
 <span id="fname" style="color:#64748b"></span>

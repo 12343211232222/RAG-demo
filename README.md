@@ -22,9 +22,19 @@ python kb.py evaluate                   # 运行 14 题评测 + 对照实验，�
 python kb.py serve --port 8765          # 启动 Web 演示页：http://127.0.0.1:8765
 ```
 
-Web 页面支持上传 `.md/.txt` 文档并选择解析算法（按段落 / 按章节 / 定长滑窗 500 字），
-无头部的文本自动补全元数据；同一文档再次上传视为**更新**（自动升版本、旧版转 deprecated），
-相同内容重复上传**幂等跳过**。
+Web 页面支持上传 `.md/.txt` 文档并选择解析算法（按段落 / 按章节 / 定长滑窗 500 字 /
+**语义分块**），无头部的文本自动补全元数据；同一文档再次上传视为**更新**（自动升版本、
+旧版转 deprecated），相同内容重复上传**幂等跳过**。
+
+语义分块使用真实嵌入模型（OpenAI 兼容接口），通过环境变量配置，不内置密钥：
+
+```bash
+$env:KB_EMBED_BASE_URL="https://api.openai.com/v1"   # 或本地 Ollama: http://127.0.0.1:11434/v1
+$env:KB_EMBED_API_KEY="sk-..."                        # 本地服务可任意填
+$env:KB_EMBED_MODEL="text-embedding-3-small"          # 或 bge-m3 等
+$env:KB_SEMANTIC_THRESHOLD="0.5"                      # 相邻段落余弦相似度切分阈值（可选）
+python kb.py serve --port 8765
+```
 
 ## 设计要点
 
