@@ -95,23 +95,45 @@ def _fixed_chunks(doc_key, meta, body, size=500, overlap=50):
     return chunks
 
 
-# ---- 真实嵌入模型（OpenAI 兼容 /embeddings 接口，环境变量配置，不内置密钥）----
-#   KB_EMBED_BASE_URL  如 https://api.openai.com/v1 或本地 Ollama 的 http://127.0.0.1:11434/v1
-#   KB_EMBED_API_KEY   密钥（本地服务可任意）
-#   KB_EMBED_MODEL     如 text-embedding-3-small / bge-m3
-#   KB_SEMANTIC_THRESHOLD  相邻段落余弦相似度切分阈值，默认 0.5
+# ---- 真实嵌入模型（OpenAI 兼容 /embeddings 接口）----
+# 配置优先级：页面设置（kb_config.json）> 环境变量（KB_EMBED_BASE_URL / KB_EMBED_API_KEY /
+# KB_EMBED_MODEL / KB_SEMANTIC_THRESHOLD）。密钥仅存本地配置文件，不进入代码。
+
+CONFIG_FILE = BASE / "kb_config.json"
+
+
+def load_config():
+    if CONFIG_FILE.exists():
+        try:
+            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_config(cfg):
+    CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def embed_settings():
+    cfg = load_config()
+    return {
+        "base_url": cfg.get("embed_base_url") or os.environ.get("KB_EMBED_BASE_URL", ""),
+        "api_key": cfg.get("embed_api_key") or os.environ.get("KB_EMBED_API_KEY", ""),
+        "model": cfg.get("embed_model") or os.environ.get("KB_EMBED_MODEL", "text-embedding-3-small"),
+    }
+
 
 def embed_texts(texts):
-    """调用真实嵌入模型；未配置 KB_EMBED_BASE_URL 时返回 None。"""
-    base = os.environ.get("KB_EMBED_BASE_URL")
-    if not base:
+    """调用真实嵌入模型；未配置服务地址时返回 None。"""
+    s = embed_settings()
+    if not s["base_url"]:
         return None
-    key = os.environ.get("KB_EMBED_API_KEY", "")
-    model = os.environ.get("KB_EMBED_MODEL", "text-embedding-3-small")
     req = urllib.request.Request(
-        base.rstrip("/") + "/embeddings",
-        data=json.dumps({"model": model, "input": texts}).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+        s["base_url"].rstrip("/") + "/embeddings",
+        data=json.dumps({"model": s["model"], "input": texts}).encode("utf-8"),
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {s['api_key']}"})
     with urllib.request.urlopen(req, timeout=60) as r:
         data = json.loads(r.read())
     return [d["embedding"] for d in sorted(data["data"], key=lambda d: d["index"])]
@@ -131,8 +153,8 @@ def _semantic_chunks(doc_key, meta, body):
         return []
     vecs = embed_texts(paras)
     if vecs is None:
-        raise ValueError("语义分块需要真实嵌入模型：请设置环境变量 "
-                         "KB_EMBED_BASE_URL / KB_EMBED_API_KEY / KB_EMBED_MODEL")
+        raise ValueError("语义分块需要真实嵌入模型：请在左侧「嵌入模型设置」中填写 API 地址与模型，"
+                         "或设置环境变量 KB_EMBED_BASE_URL / KB_EMBED_API_KEY / KB_EMBED_MODEL")
     threshold = float(os.environ.get("KB_SEMANTIC_THRESHOLD", "0.5"))
     groups, cur = [], [paras[0]]
     for i in range(1, len(paras)):
@@ -460,6 +482,8 @@ button:hover{background:#1d4ed8}
 <label class="filebtn">选择文件<input type="file" id="file" accept=".md,.txt,.markdown" style="display:none"></label>
 <span id="fname" style="color:#64748b"></span>
 <button onclick="upload()">解析并导入</button><div id="upmsg"></div></div>
+<div class="up"><b>模型设置</b> <span id="embstate" class="tag"></span>
+<button onclick="location.href='/settings'">嵌入模型配置 →</button></div>
 </aside>
 <div class="chat">
   <div id="msgs">
@@ -519,8 +543,48 @@ async function upload(){
   upmsg.textContent=j.message;
   if(j.ok){loadDocs();add('bot','文档导入结果：'+j.message,[])}
 }
+async function loadEmb(){
+  const j=await (await fetch('/api/embed-config')).json();
+  embstate.textContent=j.configured?'已配置':'未配置';
+}
 document.getElementById('file').addEventListener('change',e=>{fname.textContent=e.target.files[0]?e.target.files[0].name:''});
-loadDocs();q.addEventListener('keydown',e=>{if(e.key==='Enter')ask()});
+loadDocs();loadEmb();q.addEventListener('keydown',e=>{if(e.key==='Enter')ask()});
+</script></body></html>"""
+
+
+SETTINGS_PAGE = """<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8"><title>模型设置 - 知澜知识库</title><style>
+body{margin:0;font:14px/1.6 system-ui,"Segoe UI","Microsoft YaHei",sans-serif;background:#f4f8fd;color:#0f172a}
+.top{height:56px;background:#fff;border-bottom:1px solid #dbe7f5;display:flex;align-items:center;padding:0 20px;gap:12px}
+.logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#38bdf8,#2563eb);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+.card{max-width:560px;margin:32px auto;background:#fff;border:1px solid #dbe7f5;border-radius:16px;padding:24px}
+label{display:block;margin:14px 0 4px;font-weight:600;font-size:13px}
+input{width:100%;padding:9px 12px;border:1px solid #dbe7f5;border-radius:8px;box-sizing:border-box}
+button{background:#2563eb;color:#fff;border:none;padding:9px 20px;border-radius:8px;cursor:pointer;margin-top:16px}
+.tip{color:#64748b;font-size:12px;margin-top:8px}
+a{color:#2563eb;text-decoration:none}
+</style></head><body>
+<div class="top"><div class="logo">澜</div><b>知澜知识库</b><span style="color:#64748b;font-size:13px">嵌入模型设置</span>
+<span style="flex:1"></span><a href="/">← 返回知识库</a></div>
+<div class="card"><h2 style="margin-top:0">嵌入模型配置</h2>
+<div class="tip">语义分块通过 OpenAI 兼容的 /embeddings 接口计算相邻段落相似度。配置保存在本地 kb_config.json，密钥不进入代码；未配置时其余三种解析算法不受影响。</div>
+<label>API 地址</label><input id="eb" placeholder="如 https://api.openai.com/v1 或 http://127.0.0.1:11434/v1">
+<label>API Key</label><input id="ek" type="password" placeholder="本地服务可任意填；留空则保持已存值">
+<label>模型名</label><input id="em" placeholder="如 text-embedding-3-small / bge-m3">
+<div>当前状态：<b id="state"></b></div>
+<button onclick="save()">保存配置</button> <span id="msg" style="color:#059669"></span></div>
+<script>
+async function load(){
+  const j=await (await fetch('/api/embed-config')).json();
+  eb.value=j.base_url||''; em.value=j.model||'';
+  state.textContent=j.configured?'已配置'+(j.has_key?'（含密钥）':''):'未配置';
+}
+async function save(){
+  const j=await (await fetch('/api/embed-config',{method:'POST',
+    body:JSON.stringify({base_url:eb.value,api_key:ek.value,model:em.value})})).json();
+  msg.textContent=j.message; ek.value=''; load();
+}
+load();
 </script></body></html>"""
 
 
@@ -542,6 +606,8 @@ def cmd_serve(store, port):
             qs = parse_qs(u.query)
             if u.path == "/":
                 self._send(PAGE)
+            elif u.path == "/settings":
+                self._send(SETTINGS_PAGE)
             elif u.path == "/api/ask":
                 q = qs.get("q", [""])[0]
                 method = qs.get("method", ["bm25"])[0]
@@ -555,12 +621,29 @@ def cmd_serve(store, port):
                 docs = sorted(store.data["docs"].values(),
                               key=lambda d: (d["doc_id"], Store.version_key(d["version"])))
                 self._send(json.dumps(docs, ensure_ascii=False), "application/json")
+            elif u.path == "/api/embed-config":
+                s = embed_settings()
+                self._send(json.dumps({
+                    "base_url": s["base_url"], "model": s["model"],
+                    "has_key": bool(s["api_key"]), "configured": bool(s["base_url"]),
+                }, ensure_ascii=False), "application/json")
             else:
                 self.send_response(404); self.end_headers()
 
         def do_POST(self):
             u = urlparse(self.path)
-            if u.path == "/api/upload":
+            if u.path == "/api/embed-config":
+                length = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                cfg = load_config()
+                cfg["embed_base_url"] = body.get("base_url", "").strip()
+                cfg["embed_model"] = body.get("model", "").strip() or "text-embedding-3-small"
+                if body.get("api_key"):
+                    cfg["embed_api_key"] = body["api_key"].strip()
+                save_config(cfg)
+                self._send(json.dumps({"ok": True, "message": "嵌入模型配置已保存"},
+                                      ensure_ascii=False), "application/json")
+            elif u.path == "/api/upload":
                 qs = parse_qs(u.query)
                 method = qs.get("method", ["paragraph"])[0]
                 if method not in CHUNKERS:
