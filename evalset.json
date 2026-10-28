@@ -1,0 +1,87 @@
+[
+  {
+    "id": "t1", "split": "tune", "type": "normal",
+    "question": "VPN 客户端连接失败时，第一步应该检查什么？",
+    "gold": {"docs": ["vpn-setup"], "chunks": [{"doc_id": "vpn-setup", "contains": "5.2"}], "facts": ["5.2"]}
+  },
+  {
+    "id": "t2", "split": "tune", "type": "error-code",
+    "question": "E1002 错误码表示什么？",
+    "gold": {"docs": ["api-error-codes"], "chunks": [{"doc_id": "api-error-codes", "contains": "鉴权失败"}], "facts": ["鉴权失败"]}
+  },
+  {
+    "id": "t3", "split": "tune", "type": "version",
+    "question": "密码策略 1.0 版中，密码有效期是多少天？",
+    "gold": {"doc_id": "password-policy", "version": "1.0", "docs": ["password-policy"],
+             "chunks": [{"doc_id": "password-policy", "contains": "90天"}], "facts": ["90天"]}
+  },
+  {
+    "id": "t4", "split": "tune", "type": "conflict",
+    "question": "账号密码的有效期到底是多少天？",
+    "gold": {"docs": ["password-policy", "security-baseline"],
+             "chunks": [{"doc_id": "password-policy", "contains": "180天"}, {"doc_id": "security-baseline", "contains": "90天"}],
+             "facts": ["90天", "180天"], "conflict": true}
+  },
+  {
+    "id": "t5", "split": "tune", "type": "cross-paragraph",
+    "question": "开启灰度开关的服务，生产发布前需要满足哪些附加条件？",
+    "gold": {"docs": ["deploy-guide"],
+             "chunks": [{"doc_id": "deploy-guide", "contains": "灰度开关"}, {"doc_id": "deploy-guide", "contains": "24 小时"}],
+             "facts": ["24 小时", "二次确认"]}
+  },
+  {
+    "id": "t6", "split": "tune", "type": "insufficient",
+    "question": "公司食堂午餐几点开始供应？",
+    "gold": {"insufficient": true}
+  },
+  {
+    "id": "t7", "split": "tune", "type": "duplicate",
+    "question": "报销发票的抬头有什么要求？",
+    "gold": {"docs": ["expense-faq", "expense-policy"],
+             "chunks": [{"doc_id": "expense-faq", "contains": "税号"}, {"doc_id": "expense-policy", "contains": "税号"}],
+             "facts": ["公司全称", "税号"]}
+  },
+  {
+    "id": "t8", "split": "tune", "type": "same-term",
+    "question": "接口超时时间是多少？",
+    "gold": {"docs": ["payment-api", "auth-api"],
+             "chunks": [{"doc_id": "payment-api", "contains": "30 秒"}, {"doc_id": "auth-api", "contains": "5 秒"}],
+             "facts": ["30 秒", "5 秒"], "conflict": true}
+  },
+  {
+    "id": "h1", "split": "holdout", "type": "normal",
+    "question": "如何申请 VPN 账号？",
+    "gold": {"docs": ["vpn-setup"], "chunks": [{"doc_id": "vpn-setup", "contains": "工单"}], "facts": ["工单"]}
+  },
+  {
+    "id": "h2", "split": "holdout", "type": "error-code",
+    "question": "E2001 和 E2002 有什么区别？",
+    "gold": {"docs": ["api-error-codes"], "chunks": [{"doc_id": "api-error-codes", "contains": "E2001"}], "facts": ["限流", "配额"]}
+  },
+  {
+    "id": "h3", "split": "holdout", "type": "version",
+    "question": "API 错误码手册 1.0 版中，E1002 的含义是什么？",
+    "gold": {"doc_id": "api-error-codes", "version": "1.0", "docs": ["api-error-codes"],
+             "chunks": [{"doc_id": "api-error-codes", "contains": "参数错误"}], "facts": ["参数错误"]}
+  },
+  {
+    "id": "h4", "split": "holdout", "type": "update",
+    "setup": [{"action": "import", "file": "deploy-guide_v3.0.md"}],
+    "question": "生产环境的发布冻结期是如何规定的？",
+    "gold": {"docs": ["deploy-guide"], "chunks": [{"doc_id": "deploy-guide", "contains": "48 小时"}],
+             "facts": ["48 小时"], "forbidden_facts": ["不设发布冻结期"]}
+  },
+  {
+    "id": "h5", "split": "holdout", "type": "revoke",
+    "setup": [{"action": "revoke", "doc_id": "data-retention"}],
+    "question": "应用日志数据保留多长时间？",
+    "gold": {"insufficient": true}
+  },
+  {
+    "id": "h6", "split": "holdout", "type": "conflict",
+    "question": "服务熔断的错误率阈值是多少？",
+    "gold": {"docs": ["oncall-handbook", "payment-api"],
+             "chunks": [{"doc_id": "oncall-handbook", "contains": "50%"}, {"doc_id": "payment-api", "contains": "80%"}],
+             "facts": ["50%", "80%"], "conflict": true}
+  }
+]
